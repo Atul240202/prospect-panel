@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Signup = () => {
   const [firstName, setFirstName] = useState("");
@@ -13,11 +14,30 @@ const Signup = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const { register, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  
+  // Redirect if already authenticated
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle signup logic here
-    console.log("Signup attempt:", { firstName, lastName, email, password });
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      const username = `${firstName} ${lastName}`.trim();
+      await register(username, email, password);
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      // Error is handled in AuthContext with toast
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -150,8 +170,16 @@ const Signup = () => {
                   type="submit" 
                   variant="gradient" 
                   className="w-full h-12 text-base font-medium"
+                  disabled={isSubmitting}
                 >
-                  Sign Up
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating Account...
+                    </>
+                  ) : (
+                    "Sign Up"
+                  )}
                 </Button>
               </form>
 

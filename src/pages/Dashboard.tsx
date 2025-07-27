@@ -3,10 +3,21 @@ import { Outlet } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bell } from "lucide-react";
+import { Bell, LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Dashboard = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+  };
+
+  const getUserInitials = () => {
+    if (!user?.username) return "U";
+    return user.username.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+  };
 
   return (
     <div className="flex h-screen bg-background">
@@ -27,12 +38,21 @@ const Dashboard = () => {
               <Bell className="h-5 w-5" />
             </Button>
             
-            <Avatar className="h-8 w-8">
-              <AvatarImage src="" alt="User" />
-              <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                AJ
-              </AvatarFallback>
-            </Avatar>
+            <div className="flex items-center space-x-2">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src="" alt={user?.username || "User"} />
+                <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                  {getUserInitials()}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-sm font-medium text-foreground hidden md:block">
+                {user?.username || "User"}
+              </span>
+            </div>
+            
+            <Button variant="ghost" size="icon" onClick={handleLogout} title="Logout">
+              <LogOut className="h-5 w-5" />
+            </Button>
           </div>
         </header>
 
