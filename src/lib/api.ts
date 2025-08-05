@@ -33,8 +33,13 @@ class ApiError extends Error {
 
 const handleResponse = async (response: Response) => {
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'An error occurred' }));
-    throw new ApiError(response.status, errorData.message || 'An error occurred');
+    const errorData = await response
+      .json()
+      .catch(() => ({ message: 'An error occurred' }));
+    throw new ApiError(
+      response.status,
+      errorData.message || 'An error occurred'
+    );
   }
   return response.json();
 };
