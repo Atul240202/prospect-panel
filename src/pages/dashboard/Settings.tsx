@@ -1,20 +1,39 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { X, ExternalLink } from "lucide-react";
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { X, ExternalLink, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 const Settings = () => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+
   const [keywords, setKeywords] = useState([
-    "Saas", "development", "web developer", "freelance website development", "AI tools", "Product hunt"
+    'Saas',
+    'development',
+    'web developer',
+    'freelance website development',
+    'AI tools',
+    'Product hunt',
   ]);
-  const [newKeyword, setNewKeyword] = useState("");
-  const [postsPerDay, setPostsPerDay] = useState("1");
-  const [engagementLevel, setEngagementLevel] = useState("moderate");
-  const [startTime, setStartTime] = useState("09:00");
+  const [newKeyword, setNewKeyword] = useState('');
+  const [postsPerDay, setPostsPerDay] = useState('1');
+  const [engagementLevel, setEngagementLevel] = useState('moderate');
+  const [startTime, setStartTime] = useState('09:00');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const removeKeyword = (index: number) => {
     setKeywords(keywords.filter((_, i) => i !== index));
@@ -23,130 +42,237 @@ const Settings = () => {
   const addKeyword = () => {
     if (newKeyword.trim() && keywords.length < 6) {
       setKeywords([...keywords, newKeyword.trim()]);
-      setNewKeyword("");
+      setNewKeyword('');
     }
   };
 
+  // Load user settings on component mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!user?.id) return;
+
+      setIsLoading(true);
+      try {
+        const response = await api.getUserSettings(user.id);
+        const settings = response.settings;
+
+        setKeywords(settings.keywords);
+        setPostsPerDay(settings.postsPerDay.toString());
+        setEngagementLevel(settings.engagementLevel);
+        setStartTime(settings.startTime);
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load settings. Using default values.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSettings();
+  }, [user?.id, toast]);
+
+  const handleSaveSettings = async () => {
+    if (!user?.id) {
+      toast({
+        title: 'Error',
+        description: 'User not authenticated',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await api.updateUserSettings(user.id, {
+        keywords,
+        postsPerDay: parseInt(postsPerDay),
+        engagementLevel: engagementLevel as 'low' | 'moderate' | 'high',
+        startTime,
+      });
+
+      toast({
+        title: 'Success',
+        description: 'Settings saved successfully!',
+      });
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save settings. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className='space-y-6'>
+        <div>
+          <h1 className='text-3xl font-bold text-foreground'>Settings</h1>
+          <p className='text-muted-foreground mt-2'>
+            Configure your LinkedIn automation preferences
+          </p>
+        </div>
+        <div className='flex items-center justify-center h-64'>
+          <div className='text-center'>
+            <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4'></div>
+            <p className='text-muted-foreground'>Loading settings...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className='space-y-6'>
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground mt-2">
+        <h1 className='text-3xl font-bold text-foreground'>Settings</h1>
+        <p className='text-muted-foreground mt-2'>
           Configure your LinkedIn automation preferences
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
         {/* Settings Cards */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className='lg:col-span-2 space-y-6'>
           {/* Keyword Settings */}
-          <Card className="shadow-card">
+          <Card className='shadow-card'>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-semibold text-sm">
+              <div className='flex items-center justify-between'>
+                <div className='flex items-center space-x-3'>
+                  <div className='w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-semibold text-sm'>
                     1
                   </div>
                   <div>
                     <CardTitle>Keyword settings</CardTitle>
-                    <p className="text-sm text-muted-foreground">Comment on posts with targeted keywords</p>
+                    <p className='text-sm text-muted-foreground'>
+                      Comment on posts with targeted keywords
+                    </p>
                   </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className='space-y-4'>
                 <div>
-                  <Label htmlFor="keywords" className="text-sm font-medium">
-                    Target Keywords <span className="text-destructive">*</span>
+                  <Label htmlFor='keywords' className='text-sm font-medium'>
+                    Target Keywords <span className='text-destructive'>*</span>
                   </Label>
-                  <div className="flex flex-wrap gap-2 mt-2 mb-3">
+                  <div className='flex flex-wrap gap-2 mt-2 mb-3'>
                     {keywords.map((keyword, index) => (
-                      <Badge key={index} variant="default" className="flex items-center gap-1">
+                      <Badge
+                        key={index}
+                        variant='default'
+                        className='flex items-center gap-1'
+                      >
                         {keyword}
-                        <X 
-                          className="h-3 w-3 cursor-pointer" 
+                        <X
+                          className='h-3 w-3 cursor-pointer'
                           onClick={() => removeKeyword(index)}
                         />
                       </Badge>
                     ))}
                   </div>
-                  <div className="flex gap-2">
+                  <div className='flex gap-2'>
                     <Input
-                      id="keywords"
-                      placeholder="e.g. marketing"
+                      id='keywords'
+                      placeholder='e.g. marketing'
                       value={newKeyword}
                       onChange={(e) => setNewKeyword(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && addKeyword()}
                     />
-                    <Button onClick={addKeyword} disabled={keywords.length >= 6}>
+                    <Button
+                      onClick={addKeyword}
+                      disabled={keywords.length >= 6}
+                    >
                       Add
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className='text-xs text-muted-foreground mt-1'>
                     Max 6 keywords are allowed
                   </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                    <button className="text-xs text-muted-foreground hover:text-primary">
-                      Click here to check LinkedIn posts for these keywords before saving, or comments won't be posted.
+                  <div className='flex items-center gap-2 mt-2'>
+                    <ExternalLink className='h-4 w-4 text-muted-foreground' />
+                    <button className='text-xs text-muted-foreground hover:text-primary'>
+                      Click here to check LinkedIn posts for these keywords
+                      before saving, or comments won't be posted.
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <Label htmlFor="posts-per-day" className="text-sm font-medium">
-                    Number of posts to comment per day <span className="text-destructive">*</span>
+                  <Label
+                    htmlFor='posts-per-day'
+                    className='text-sm font-medium'
+                  >
+                    Number of posts to comment per day{' '}
+                    <span className='text-destructive'>*</span>
                   </Label>
                   <Input
-                    id="posts-per-day"
-                    type="number"
-                    min="1"
-                    max="100"
+                    id='posts-per-day'
+                    type='number'
+                    min='1'
+                    max='100'
                     value={postsPerDay}
                     onChange={(e) => setPostsPerDay(e.target.value)}
-                    className="mt-2"
+                    className='mt-2'
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className='text-xs text-muted-foreground mt-1'>
                     Max 100 posts per day
                   </p>
                 </div>
 
                 <div>
-                  <Label htmlFor="engagement" className="text-sm font-medium">
-                    Comment Monitoring Based on Engagement <span className="text-destructive">*</span>
+                  <Label htmlFor='engagement' className='text-sm font-medium'>
+                    Comment Monitoring Based on Engagement{' '}
+                    <span className='text-destructive'>*</span>
                   </Label>
-                  <Select value={engagementLevel} onValueChange={setEngagementLevel}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue placeholder="Select engagement level" />
+                  <Select
+                    value={engagementLevel}
+                    onValueChange={setEngagementLevel}
+                  >
+                    <SelectTrigger className='mt-2'>
+                      <SelectValue placeholder='Select engagement level' />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="low">Low Engagement Check</SelectItem>
-                      <SelectItem value="moderate">Moderate Engagement Check</SelectItem>
-                      <SelectItem value="high">High Engagement Check</SelectItem>
+                      <SelectItem value='low'>Low Engagement Check</SelectItem>
+                      <SelectItem value='moderate'>
+                        Moderate Engagement Check
+                      </SelectItem>
+                      <SelectItem value='high'>
+                        High Engagement Check
+                      </SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className='text-xs text-muted-foreground mt-1'>
                     Choose when to post comments based on the engagement level
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Select Time to Start Commenting</Label>
-                  <div className="flex gap-2">
+                <div className='flex items-center justify-between'>
+                  <Label className='text-sm font-medium'>
+                    Select Time to Start Commenting
+                  </Label>
+                  <div className='flex gap-2'>
                     <Input
-                      type="time"
+                      type='time'
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
-                      className="w-24"
+                      className='w-24'
                     />
-                    <Select defaultValue="AM">
-                      <SelectTrigger className="w-20">
+                    <Select defaultValue='AM'>
+                      <SelectTrigger className='w-20'>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="AM">AM</SelectItem>
-                        <SelectItem value="PM">PM</SelectItem>
+                        <SelectItem value='AM'>AM</SelectItem>
+                        <SelectItem value='PM'>PM</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -156,28 +282,33 @@ const Settings = () => {
           </Card>
 
           {/* Comment Settings */}
-          <Card className="shadow-card">
+          <Card className='shadow-card'>
             <CardHeader>
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-semibold text-sm">
+              <div className='flex items-center space-x-3'>
+                <div className='w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-semibold text-sm'>
                   2
                 </div>
                 <div>
                   <CardTitle>Comment settings</CardTitle>
-                  <p className="text-sm text-muted-foreground">Customize and personalize your comments</p>
+                  <p className='text-sm text-muted-foreground'>
+                    Customize and personalize your comments
+                  </p>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className='space-y-4'>
                 <div>
-                  <Label className="text-sm font-medium">Additional Post Evaluation Rules</Label>
-                  <div className="bg-gradient-secondary rounded-lg p-4 mt-2 border border-border">
-                    <p className="text-sm text-muted-foreground">
-                      Configure additional rules for post evaluation and comment generation. 
-                      Premium feature - upgrade to access advanced customization options.
+                  <Label className='text-sm font-medium'>
+                    Additional Post Evaluation Rules
+                  </Label>
+                  <div className='bg-gradient-secondary rounded-lg p-4 mt-2 border border-border'>
+                    <p className='text-sm text-muted-foreground'>
+                      Configure additional rules for post evaluation and comment
+                      generation. Premium feature - upgrade to access advanced
+                      customization options.
                     </p>
-                    <Button variant="gradient" size="sm" className="mt-3">
+                    <Button variant='gradient' size='sm' className='mt-3'>
                       Upgrade to Configure
                     </Button>
                   </div>
@@ -189,18 +320,23 @@ const Settings = () => {
 
         {/* Right Column - Next Step */}
         <div>
-          <Card className="shadow-card">
-            <CardContent className="p-6">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-2xl">🚀</span>
+          <Card className='shadow-card'>
+            <CardContent className='p-6'>
+              <div className='text-center'>
+                <div className='w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4'>
+                  <span className='text-2xl'>🚀</span>
                 </div>
-                <h3 className="font-semibold text-lg mb-2">Ready to Launch!</h3>
-                <p className="text-sm text-muted-foreground mb-4">
+                <h3 className='font-semibold text-lg mb-2'>Ready to Launch!</h3>
+                <p className='text-sm text-muted-foreground mb-4'>
                   Save your settings and start automating your LinkedIn comments
                 </p>
-                <Button variant="gradient" className="w-full">
-                  Save & Continue
+                <Button
+                  variant='gradient'
+                  className='w-full'
+                  onClick={handleSaveSettings}
+                  disabled={isSaving || isLoading}
+                >
+                  {isSaving ? 'Saving...' : 'Save & Continue'}
                 </Button>
               </div>
             </CardContent>
