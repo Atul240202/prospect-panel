@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,6 +10,8 @@ import {
   ExternalLink,
   Copy,
   Check,
+  RefreshCw,
+  Clock,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
@@ -18,21 +20,118 @@ const Profile = () => {
   const { user, token } = useAuth();
   const [extensionStatus, setExtensionStatus] = useState('not-connected');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   const [pairingData, setPairingData] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [extensionInfo, setExtensionInfo] = useState(null);
+  const [pairingTimer, setPairingTimer] = useState(0); // Timer in seconds
+  const [isPairingActive, setIsPairingActive] = useState(false);
+
+  const intervalRef = useRef(null);
+  const timerRef = useRef(null);
 
   useEffect(() => {
-    // Check if extension is connected by looking for stored data
+    // Only check extension status once on component mount
     checkExtensionStatus();
+  }, [user]);
+
+  // Cleanup intervals on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
   }, []);
 
   const checkExtensionStatus = async () => {
+    if (!user) return;
+
     try {
-      // You could add an API endpoint to check if the user has paired tokens
-      // For now, we'll just show the connect button
-      setExtensionStatus('not-connected');
+      setIsChecking(true);
+
+      const response = await fetch(
+        'http://localhost:5000/api/auth/check-extension-status',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            userId: user.id || user._id,
+            userEmail: user.email,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setExtensionInfo(data.extensionInfo);
+
+        if (data.isPaired && data.extensionInfo?.userEmail === user.email) {
+          setExtensionStatus('connected');
+          // Stop pairing timer and polling if connected
+          stopPairingProcess();
+        } else if (
+          data.isPaired &&
+          data.extensionInfo?.userEmail !== user.email
+        ) {
+          setExtensionStatus('wrong-user');
+          stopPairingProcess();
+        } else {
+          setExtensionStatus('not-connected');
+        }
+      } else {
+        setExtensionStatus('not-connected');
+      }
     } catch (error) {
       console.error('Error checking extension status:', error);
+      setExtensionStatus('not-connected');
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const startPairingProcess = () => {
+    setIsPairingActive(true);
+    setPairingTimer(180); // 3 minutes = 180 seconds
+
+    // Start timer countdown
+    timerRef.current = setInterval(() => {
+      setPairingTimer((prev) => {
+        if (prev <= 1) {
+          stopPairingProcess();
+          toast({
+            title: 'Pairing timeout',
+            description: 'Pairing session expired. Please try again.',
+            variant: 'destructive',
+          });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Start polling every 5 seconds
+    intervalRef.current = setInterval(checkExtensionStatus, 5000);
+  };
+
+  const stopPairingProcess = () => {
+    setIsPairingActive(false);
+    setPairingTimer(0);
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
   };
 
@@ -51,11 +150,7 @@ const Profile = () => {
     try {
       // Create pairing data
       const pairingInfo = {
-        userId:
-          (user as any)._id ||
-          (user as any).id ||
-          (user as any).userId ||
-          user.id,
+        userId: user.id || user._id,
         userEmail: user.email,
         authToken: token,
         timestamp: new Date().toISOString(),
@@ -68,12 +163,25 @@ const Profile = () => {
         JSON.stringify(pairingInfo)
       );
 
+      // Also send to backend to track pairing attempts
+      await fetch('http://localhost:5000/api/auth/initiate-pairing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(pairingInfo),
+      });
+
       setPairingData(pairingInfo);
 
+      // Start the pairing process with timer and polling
+      startPairingProcess();
+
       toast({
-        title: 'Extension pairing data prepared',
+        title: 'Extension pairing started',
         description:
-          'Click the extension icon in your browser toolbar to complete pairing.',
+          'Click the extension icon in your browser toolbar to complete pairing. You have 3 minutes.',
       });
 
       setIsConnecting(false);
@@ -85,6 +193,41 @@ const Profile = () => {
         variant: 'destructive',
       });
       setIsConnecting(false);
+    }
+  };
+
+  const disconnectExtension = async () => {
+    try {
+      // Clear extension storage via backend
+      await fetch('http://localhost:5000/api/auth/disconnect-extension', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: user.id || user._id,
+        }),
+      });
+
+      // Clear local storage
+      localStorage.removeItem('linkedin_extension_pairing');
+      setPairingData(null);
+      setExtensionStatus('not-connected');
+      setExtensionInfo(null);
+      stopPairingProcess();
+
+      toast({
+        title: 'Extension disconnected',
+        description: 'Your extension has been disconnected successfully.',
+      });
+    } catch (error) {
+      console.error('Error disconnecting extension:', error);
+      toast({
+        title: 'Disconnect failed',
+        description: 'Failed to disconnect extension. Please try again.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -110,6 +253,12 @@ const Profile = () => {
     }
   };
 
+  const formatTimer = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
   const getExtensionStatusBadge = () => {
     switch (extensionStatus) {
       case 'connected':
@@ -118,6 +267,8 @@ const Profile = () => {
             Connected
           </Badge>
         );
+      case 'wrong-user':
+        return <Badge variant='destructive'>Wrong User</Badge>;
       case 'connecting':
         return <Badge variant='secondary'>Connecting...</Badge>;
       default:
@@ -128,7 +279,11 @@ const Profile = () => {
   const getExtensionStatusText = () => {
     switch (extensionStatus) {
       case 'connected':
-        return 'Your LinkedIn account is connected and ready for automation';
+        return `Connected to ${extensionInfo?.userEmail || 'your account'}`;
+      case 'wrong-user':
+        return `Extension is paired with ${
+          extensionInfo?.userEmail || 'another user'
+        }. Please disconnect and reconnect.`;
       case 'connecting':
         return 'Connecting your LinkedIn account...';
       default:
@@ -196,11 +351,64 @@ const Profile = () => {
                       {getExtensionStatusText()}
                     </p>
                   </div>
-                  {getExtensionStatusBadge()}
+                  <div className='flex items-center space-x-2'>
+                    {getExtensionStatusBadge()}
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      onClick={checkExtensionStatus}
+                      disabled={isChecking}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${
+                          isChecking ? 'animate-spin' : ''
+                        }`}
+                      />
+                    </Button>
+                  </div>
                 </div>
 
+                {/* Pairing Timer */}
+                {isPairingActive && (
+                  <div className='mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg'>
+                    <div className='flex items-center justify-between'>
+                      <div className='flex items-center space-x-2'>
+                        <Clock className='h-4 w-4 text-yellow-600' />
+                        <span className='text-sm font-medium text-yellow-800'>
+                          Pairing in progress...
+                        </span>
+                      </div>
+                      <div className='text-sm font-mono text-yellow-800'>
+                        {formatTimer(pairingTimer)}
+                      </div>
+                    </div>
+                    <p className='text-xs text-yellow-700 mt-1'>
+                      Click the extension icon in your browser toolbar to
+                      complete pairing
+                    </p>
+                  </div>
+                )}
+
                 <div className='mt-3 space-y-2'>
-                  {!pairingData ? (
+                  {extensionStatus === 'connected' ? (
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={disconnectExtension}
+                      className='w-full'
+                    >
+                      Disconnect Extension
+                    </Button>
+                  ) : extensionStatus === 'wrong-user' ? (
+                    <Button
+                      variant='destructive'
+                      size='sm'
+                      onClick={disconnectExtension}
+                      className='w-full'
+                    >
+                      Disconnect and Reconnect
+                    </Button>
+                  ) : !pairingData ? (
                     <Button
                       variant='gradient'
                       size='sm'
@@ -244,7 +452,10 @@ const Profile = () => {
                       <Button
                         variant='outline'
                         size='sm'
-                        onClick={() => setPairingData(null)}
+                        onClick={() => {
+                          setPairingData(null);
+                          stopPairingProcess();
+                        }}
                         className='w-full'
                       >
                         Cancel Pairing
